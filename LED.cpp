@@ -14,6 +14,11 @@ LED::LED(const char* chipAddress, unsigned int line_offset, uint8_t mode)
     _line_offset = line_offset;
     _chipAddress = chipAddress;
     _consumer = "LED";
+    _blinkCounter = 0;
+    _blinkFlag = false;
+    _blinkDelay = 0;
+    _blinkNumber = 0;
+    _initFlag = false;
 
     if(_mode == 0)
     {
@@ -24,6 +29,11 @@ LED::LED(const char* chipAddress, unsigned int line_offset, uint8_t mode)
     {
         _on = 1;
     }
+}
+
+LED::~LED()
+{
+    clean();
 }
 
 bool LED::begin(void)
@@ -48,12 +58,123 @@ bool LED::begin(void)
         return false;
     }
 
+    _initFlag = true;
+
     return true;
 }
 
 void LED::clean(void)
 {
-    if (_line) gpiod_line_release(_line);
+    // Leave the pin as input (best-effort) before dropping our handle
+    if (_line)
+    {
+        // 1) Drop whatever configuration we had (output, event, etc.)
+        gpiod_line_release(_line);
+
+        // 2) Best-effort: set it to input, then release again
+        if (gpiod_line_request_input(_line, "AUX::clean(set-input)") == 0)
+        {
+            gpiod_line_release(_line);
+        }
+        else
+        {
+            // If this fails (e.g., another process grabbed it), we still proceed.
+            // Optionally keep the last error so caller can inspect it.
+            // Requires: #include <cerrno>, <cstring>
+            errorMessage = "gpiod_line_request_input() failed while cleaning.";
+            return;
+        }
+
+        _line = nullptr;
+    }
+
+    // Optional: clear only if you don't want to keep the error above.
+    errorMessage.clear();
+
+    _initFlag = false;
+}
+
+void LED::on(void)
+{
+    gpiod_line_set_value(_line, _on);
+}
+
+void LED::off(void)
+{
+    gpiod_line_set_value(_line, !_on);
+}
+
+void LED::toggle(void)
+{
+    int state = gpiod_line_get_value(_line);
+
+    if(state < 0)
+    {
+        return;
+    }
+    else
+    {
+        gpiod_line_set_value(_line, !state);
+    }
+}
+
+void LED::blink(uint16_t duration, uint8_t number, bool blockingMode)
+{
+    if(_initFlag == false)
+    {
+        return;
+    }
+
+    if( (duration == 0) || (number == 0) )
+    {
+        _T = 0;
+        _blinkFlag = false;
+        off();
+    }
+
+    _blinkDelay = (float)duration / (2.0 * number);
+
+    if(blockingMode == true)
+    {
+        for(int i=1; i<=number; i++)
+        {
+            on();
+            std::this_thread::sleep_for(std::chrono::milliseconds(_blinkDelay));
+            off();
+            std::this_thread::sleep_for(std::chrono::milliseconds(_blinkDelay));
+        }
+    }
+    else
+    {
+        _blinkNumber = number;
+        _T = timer.millis();
+        _blinkCounter = 0;
+        _blinkFlag = true;
+        on();
+    }
+}
+
+void LED::blinkUpdate(void)
+{
+    uint64_t time = timer.millis();
+
+    if( (_blinkFlag == false) || (time <= _T) )
+    {
+        return;
+    }
+    
+    if( (time - _T) >= _blinkDelay)
+    {
+        ++_blinkCounter;
+        if(_blinkCounter >= (2* _blinkNumber) )
+        {
+            _blinkFlag = false;
+            off();
+            return;
+        }
+        toggle();
+        _T = time;   
+    }
 }
 
 void LED::blinkWarning_1(void)

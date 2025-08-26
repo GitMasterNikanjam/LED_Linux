@@ -5,6 +5,7 @@
 // Include libraries:
 #include <iostream>
 #include <gpiod.h>
+#include "../TimerControl_OS/TimerControl.h"
 
 // ##################################################################################
 /**
@@ -49,12 +50,23 @@ public:
      */
     LED(const char* chipAddress, unsigned int line_offset, uint8_t mode); 
 
+    ~LED();
+    
     /**
      * @brief Apply settings on the hardware and enable LED control.
      *
      * @return true if the hardware setup was successful, false otherwise.
      */
     bool begin(void);
+
+    /// @brief Turn on the LED.
+    void on(void);
+
+    /// @brief Turn off the LED.
+    void off(void);
+
+    /// @brief Toggle the LED.
+    void toggle(void);
 
     /**
      * @brief Clean up hardware resources and disable LED control.
@@ -82,6 +94,28 @@ public:
      */
     void blinkExit(void);
 
+    /**
+     * @brief Blink the LED.
+     * @param duration: is the total duration time for toggle LED. [ms]
+     * @param number: is the number of toggling in certain duration time.
+     * @param blockingMode: is the blink mode for blocking mode enable/disable. Default value is true that means blinking is in blocking mode.
+     * @note - Total time duration for toggle operation is: (duration)
+     */
+    void blink(uint16_t duration, uint8_t number, bool blockingMode = true);
+
+    /**
+     * @brief Return blinking status for non blocking mode.
+     * @return - true if blinking proccess is not finished.
+     * @return - false if blinking proccess is finished.
+     *  */ 
+    bool isBlinking(void) {return _blinkFlag;};
+
+    /**
+     * @brief Update blinking status in non blocking mode.
+     * @note - This method should be used in the main loop or in a periodic function.
+     */
+    void blinkUpdate(void);
+
 private:
     
     gpiod_chip* _chip;           ///< Handle to the GPIO chip.
@@ -89,6 +123,26 @@ private:
     gpiod_line* _line;           ///< Handle to the GPIO line.
     const char* _consumer;       ///< Consumer label for GPIO request.
     unsigned int _line_offset;   ///< GPIO line offset used by the LED.
+
+    TimerControl timer;
+
+    /// @brief The time update for led blinking in non blocking mode.
+    uint32_t _T;
+
+    /// @brief Counter for blink led in non blocking mode.
+    uint8_t _blinkCounter;
+
+    /// @brief The flag for blink led state in non blocking mode.
+    bool _blinkFlag;
+
+    /// @brief The delay of time for one blink led in non blocking mode. [ms]
+    uint16_t _blinkDelay;
+
+    /// @brief The number of blink led in non blocking mode.
+    uint8_t _blinkNumber;
+
+    /// @brief The flag for LED.init() is succeeded or not.
+    bool _initFlag;
 
     /**
      * @brief Active mode for the LED.
